@@ -1,0 +1,105 @@
+from oauth2client import tools
+tools.argparser.add_argument("-m","--mouse", help="specify name of the mouse", required=False)
+tools.argparser.add_argument("-d","--date", help="specify day of recording", required=False)
+tools.argparser.add_argument("-r","--recs", help="specify index of the specify recording on that day", required=False)
+args = tools.argparser.parse_args()
+
+import tools.extractSaveData as extractSaveData
+import tools.dataAnalysis as dataAnalysis
+import tools.createVisualizations as createVisualizations
+#import tools.openCVImageProcessingTools as openCVImageProcessingTools
+import pickle
+import os
+import pdb
+
+
+mouseD = '250121_m01'
+
+expDateD = 'some' # specific date e.g. '180214', 'some' for manual selection, 'all' for all, 'all910' for all recordings at 910 nm
+recordingsD='some' # 'all or 'some' or 'all910', or index of the recoding - e.g. 0,1 - when running analysis for a specific day
+#DLCinstance = 'DLC_resnet50_2024_FlatSurfaceJan24shuffle11_190000' #DLC_resnet50_2023-Aug_OptoEMGAug1shuffle10_230000'
+DLCinstance =  'DLC_resnet50_2025_neuropixelApr24shuffle6_340000' #'DLC_resnet50_2023_Nov_NewCalciumObsNov2shuffle10_390000'
+recStructure = 'simplexNPX' #'simplexNPX'# specify here 'simplexBehavior', None otherwise
+
+
+readDataAgain = True
+updateDLCinstance = True
+
+# in case mouse, and date were specified as input arguments
+if args.mouse == None:
+    mouse = mouseD
+else:
+    mouse = args.mouse
+
+if args.date == None:
+    try:
+        expDate = expDateD
+    except :
+        expDate = 'all'
+else:
+    expDate = args.date
+
+if args.recs == None:
+    try:
+        recordings = recordingsD
+    except :
+        recordings = 'all'
+else:
+    recordings = args.recs
+
+#recordings = [int(i) for i in recordings.split(',')]
+
+eSD         = extractSaveData.extractSaveData(mouse,recStruc=recStructure,mountNPXfolder=False)
+# (foldersRecordings,dataFolder,listOfRecordings) = eSD.getEphysRecordingsList(expDate=expDate,recordings=recordings) # get recordings for specific mouse and date
+(foldersRecordings,dataFolder) = eSD.getRecordingsList(expDate=expDate,recordings=recordings) # get recordings for specific mouse and date
+cV       = createVisualizations.createVisualizations(eSD.figureLocation,mouse)
+# = openCVImageProcessingTools.openCVImageProcessingTools(eSD.analysisLocation,eSD.figureLocation,eSD.f,showI=True)
+# loop over all folders, mostly days but sometimes there were two recording sessions per day
+
+print('folderRecordings: ',foldersRecordings)
+#pdb.set_trace()
+
+# if (eSD.analysisConfig['pawTrajectories']['DLCinstance'] is None) or updateDLCinstance:
+#     DLCinstance = DLCinstanceInput
+#     eSD.analysisConfig['pawTrajectories']['DLCinstance']= DLCinstance
+# else:
+#     DLCinstance = eSD.analysisConfig['pawTrajectories']['DLCinstance']
+#     print('used previously saved DLC instance : ', DLCinstance)
+
+if expDateD == 'all910' or expDateD == 'all820':
+    pickleFileName = eSD.analysisLocation + '/allOutlierFramesPerSession_%s_%s.p' % (DLCinstance, expDateD)
+else:
+    pickleFileName = eSD.analysisLocation + '/allOutlierFramesPerSession_%s.p' % (DLCinstance)
+
+# pdb.set_trace()
+if os.path.isfile(pickleFileName) and not readDataAgain:
+    outlierData = pickle.load( open(pickleFileName, 'rb') )
+    # pdb.set_trace()
+else:
+    outlierData = []
+    for f in range(len(foldersRecordings)) :
+        # loop over all recordings in that folder
+        for r in range(len(foldersRecordings[f][2])): # for r in recordings[f][1]:
+            (existenceAniFrameTimes, fileHandleAniFrameTimes) = eSD.checkIfDeviceWasRecorded(foldersRecordings[f][0],
+                                                                                             foldersRecordings[f][1],
+                                                                                             foldersRecordings[f][2][r],
+                                                                                             'animalVideoFrameTimes')
+            (existencePawPos,PawFileHandle) = eSD.checkIfPawPositionWasExtracted(foldersRecordings[f][0], foldersRecordings[f][1], foldersRecordings[f][2][r], DLCinstance, videoPrefix='raw_behavior')
+            # pdb.set_trace()
+            if  existencePawPos and existenceAniFrameTimes:
+                eSD.saveDLCInstanceForRecording(foldersRecordings[f][0],foldersRecordings[f][2][r], DLCinstance)
+                (pawPositions,pawMetaData) = eSD.readRawData(foldersRecordings[f][0],foldersRecordings[f][1],foldersRecordings[f][2][r],'pawTraces',PawFileHandle)
+                (idxTimePoints, startEndExposureTime, startEndExposurepIdx, videoIdx, frameSummary,imageMetaInfo) = eSD.readBehaviorVideoTimeData([foldersRecordings[f][0], foldersRecordings[f][2][r],'behaviorVideo'])  # [foldersRecordings[f][0], foldersRecordings[f][2][r], 'behaviorVideo']
+                #pdb.set_trace()
+                pawTrackingOutliers = dataAnalysis.detectPawTrackingOutlies(pawPositions,pawMetaData)
+                #DLCinstance = pawMetaData['data']['DLC-model-config file']['snapshot_prefix']
+                #pdb.set_trace()
+                outlierData.append([foldersRecordings[f][0],foldersRecordings[f][2][r],pawTrackingOutliers,DLCinstance])
+                cV.createPawMovementFigure(foldersRecordings[f][0],foldersRecordings[f][2][r],pawTrackingOutliers,pawMetaData)
+
+                #pdb.set_trace()
+                eSD.savePawTrackingData(mouse,foldersRecordings[f][0],foldersRecordings[f][2][r],DLCinstance,pawPositions,pawTrackingOutliers,pawMetaData,startEndExposureTime,imageMetaInfo,generateVideo=True)
+
+    pickle.dump(outlierData, open(pickleFileName, 'wb'))
+eSD.writeConfigFile()
+cV.createOutlierStatFigure(foldersRecordings,outlierData,DLCinstance,expDateD)

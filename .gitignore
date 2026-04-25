@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+*.p
+*.npy
+*.pkl
+*.pickle
+*.pdf
+*.png
+*.svg
+*.avi
+*.mp4
