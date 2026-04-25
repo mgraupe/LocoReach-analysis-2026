@@ -2,9 +2,9 @@
 
 Analysis and figure-generation code accompanying the publication:
 
-> **Cerebellar molecular layer interneurons encode locomotor kinematics during
-> precise stepping on a rung ladder**
-> Michael Graupner et al.
+> **Cerebellar activity is triggered by reach endpoint during learning of a complex locomotor task** 
+> 
+> Andry Andrianarivelo, Heike Stein, Jeremy Gabillet, Clarisse Batifol, Abdelali Jalil, N Alex Cayco Gajic, and Michael Graupner
 
 ---
 
